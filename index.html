@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SRT to Excel Converter</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+    }
+    h1 {
+      color: #333;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+    }
+    input[type="file"] {
+      margin-bottom: 20px;
+    }
+    button {
+      padding: 10px 20px;
+      background-color: #007BFF;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #0056b3;
+    }
+  </style>
+  <!-- Include SheetJS library -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+  <div class="container">
+    <h1>SRT to Excel Converter</h1>
+    <input type="file" id="srtFile" accept=".srt">
+    <button id="convertBtn">Convert to Excel</button>
+  </div>
+
+  <script>
+    document.getElementById('convertBtn').addEventListener('click', function () {
+      const fileInput = document.getElementById('srtFile');
+      if (fileInput.files.length === 0) {
+        alert('Please select an .srt file.');
+        return;
+      }
+
+      const file = fileInput.files[0];
+      const reader = new FileReader();
+
+      reader.onload = function (event) {
+        const srtContent = event.target.result;
+        const data = parseSRTToExcel(srtContent);
+        downloadExcel(data, 'subtitles.xlsx');
+      };
+
+      reader.readAsText(file);
+    });
+
+    function parseSRTToExcel(srtContent) {
+      const lines = srtContent.split('\n');
+      const data = [['Start', 'End', 'Name', 'Dialogue']]; // Excel header
+      let currentDialogue = {};
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+
+        // Check for subtitle index (e.g., "1")
+        if (/^\d+$/.test(line)) {
+          currentDialogue = {}; // Reset for new subtitle block
+        }
+        // Check for timestamp line (e.g., "00:00:01,000 --> 00:00:04,000")
+        else if (line.includes('-->')) {
+          const [start, end] = line.split(' --> ');
+          currentDialogue.start = start.trim();
+          currentDialogue.end = end.trim();
+
+          // Check if the next line is a name in ALL CAPS or contains "/"
+          if (i + 1 < lines.length && (/^[A-Z\s\/]+$/.test(lines[i + 1].trim()) || lines[i + 1].includes('/'))) {
+            currentDialogue.name = lines[i + 1].trim();
+            i++; // Skip the name line
+          } else {
+            currentDialogue.name = ''; // No name found
+          }
+        }
+        // Check for dialogue text (non-empty line that isn't a number or timestamp)
+        else if (line && !/^\d+$/.test(line) && !line.includes('-->') && line !== '\\N') {
+          // Handle cases where the name is separated by spaces (e.g., "PAVLOS                      Morning, grandma.")
+          if (/^[A-Z\s]+\s{2,}/.test(line)) {
+            const [name, ...dialogueParts] = line.split(/\s{2,}/); // Split by 2+ spaces
+            currentDialogue.name = name.trim();
+            currentDialogue.text = dialogueParts.join(' ').trim();
+          } else {
+            // Combine multi-line dialogues into one
+            if (currentDialogue.text) {
+              currentDialogue.text += ' ' + line;
+            } else {
+              currentDialogue.text = line;
+            }
+          }
+        }
+        // Check for end of subtitle block (empty line)
+        else if (line === '') {
+          if (currentDialogue.start && currentDialogue.end && currentDialogue.text) {
+            data.push([currentDialogue.start, currentDialogue.end, currentDialogue.name, currentDialogue.text]);
+          }
+          currentDialogue = {}; // Reset for next block
+        }
+      }
+
+      return data;
+    }
+
+    function downloadExcel(data, filename) {
+      const ws = XLSX.utils.aoa_to_sheet(data);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Subtitles');
+      XLSX.writeFile(wb, filename);
+    }
+  </script>
+</body>
+</html>
